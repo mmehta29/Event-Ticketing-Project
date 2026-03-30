@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "./EventRegistry.sol";
 import "./TicketCredential.sol";
+import "./CredentialRegistry.sol";
 
 contract GateVerifier {
 
@@ -24,6 +25,7 @@ contract GateVerifier {
 
     EventRegistry public eventRegistry;
     TicketCredential public ticketCredential;
+    CredentialRegistry public credentialRegistry;
 
     event TicketVerified(
         uint256 indexed ticketId,
@@ -32,13 +34,17 @@ contract GateVerifier {
         VerificationResult result
     );
 
-    constructor(address eventRegistryAddress, address ticketCredentialAddress) {
+    constructor(
+        address eventRegistryAddress,
+        address ticketCredentialAddress,
+        address credentialRegistryAddress
+    ) {
         eventRegistry = EventRegistry(eventRegistryAddress);
         ticketCredential = TicketCredential(ticketCredentialAddress);
+        credentialRegistry = CredentialRegistry(credentialRegistryAddress);
     }
 
     // MAIN FUNCTION: called by the gate scanner when someone shows up
-    // presentedHash = the hash computed from the ticket the buyer presents
     function verifyTicket(
         uint256 ticketId,
         uint256 eventId,
@@ -61,18 +67,20 @@ contract GateVerifier {
         else if (cred.status == TicketCredential.TicketStatus.Revoked) {
             result = VerificationResult.Revoked;
         }
+        // Additional check: revoked via CredentialRegistry
+        else if (credentialRegistry.isRevoked(cred.credentialHash)) {
+            result = VerificationResult.Revoked;
+        }
         // Check 4: does the presented hash match what's stored on-chain?
-        // This is the core anti-fraud check — a fake ticket won't match
         else if (cred.credentialHash != presentedHash) {
             result = VerificationResult.Invalid;
         }
         // All checks passed — ticket is valid
         else {
             result = VerificationResult.Valid;
-            usedAtGate[ticketId] = true; // mark as used so it can't be scanned again
+            usedAtGate[ticketId] = true;
         }
 
-        // Log the verification attempt — audit trail, no PII stored
         verificationLogs[ticketId].push(VerificationLog({
             ticketId: ticketId,
             eventId: eventId,
@@ -86,7 +94,6 @@ contract GateVerifier {
         return result;
     }
 
-    // READ all verification attempts for a ticket (audit trail)
     function getVerificationLogs(uint256 ticketId)
         external
         view
@@ -95,7 +102,6 @@ contract GateVerifier {
         return verificationLogs[ticketId];
     }
 
-    // READ the last verification result for a ticket
     function getLastVerification(uint256 ticketId)
         external
         view
