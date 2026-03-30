@@ -6,8 +6,8 @@ and fraud without relying on a centralized platform.
 
 ## Team
 - Manya Mehta — Identity and Credential Design
-- Sehastrajit Selvachandran — EventRegistry Contract
-- Samyogita Bhandari — TicketCredential Contract
+- Sehastrajit Selvachandran — Event Registry Contract
+- Samyogita Bhandari — Ticket Credential Contract
 - Reshikesh Reddy Puttamreddy — Gate Verification
 - Nandan Reddy Jalli — Off-Chain Integration
 
