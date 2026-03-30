@@ -29,6 +29,8 @@ This project replaces the middleman with three Solidity smart contracts:
   hash, checks revocation status, and prevents double-scanning. Emits audit logs without
   storing any PII on-chain.
 
+- **CredentialRegistry.sol (Draft / Optional)** — Optional contract for scalable credential revocation
+
 ---
 
 ## Dependencies
@@ -105,10 +107,14 @@ Steps will be added as the project progresses.
   one of: Valid, Invalid, Revoked, AlreadyUsed, EventMismatch
 - `getVerificationLogs(ticketId)` — returns full audit trail for a ticket
 - `getLastVerification(ticketId)` — returns the most recent scan result
-
+- 
+#### CredentialRegistry.sol (Draft / Optional)
+- `revokeCredential(credentialHash)` — marks a credential hash as revoked  
+- `isRevoked(credentialHash)` — checks if a credential has been revoked  
 ---
 
 ## Architecture
+
 ```
 Buyer (MetaMask wallet = DID)
         |
@@ -117,27 +123,33 @@ Buyer (MetaMask wallet = DID)
 TicketCredential.sol  ──calls──>  EventRegistry.sol
         |                          (checks supply,
         | stores credential hash    records sale)
+        |
+        ├──calls──> CredentialRegistry.sol
+        |             (revokes old credential hashes on transfer/revoke)
         v
     IPFS (full ticket data stored off-chain)
         |
         | at the gate
         v
 GateVerifier.sol
-(recomputes hash, checks revocation, prevents double-scan)
+   ├──checks──> TicketCredential.sol (ownership, status)
+   ├──checks──> CredentialRegistry.sol (revocation status)
+   └──verifies hash + prevents double-scan
 ```
 
 ---
 
 ## Testing
 
-Tests are written in JavaScript using Node.js's built-in test runner.
+Tests are written in JavaScript using Node.js's built-in test runner.  
 The test suite covers:
 
-- Event creation and validation
-- Ticket issuance and supply tracking
-- Access control (only organizer can issue/revoke)
-- Ticket transfers between wallets
-- Gate verification: valid ticket, double scan, fake hash, revoked ticket
+- Event creation and validation  
+- Ticket issuance and supply tracking  
+- Access control (only organizer can issue/revoke)  
+- Ticket transfers between wallets  
+- Gate verification: valid ticket, double scan, fake hash, revoked ticket  
+- Credential revocation tracking via CredentialRegistry (draft integration)
 
 Run tests:
 ```bash
