@@ -2,8 +2,12 @@
 pragma solidity ^0.8.20;
 
 import "./EventRegistry.sol";
+import "./CredentialRegistry.sol";
 
 contract TicketCredential {
+
+    // Reference to external contracts
+    CredentialRegistry public credentialRegistry;
 
     // Every ticket's possible states
     enum TicketStatus { Valid, Used, Revoked, Transferred }
@@ -58,19 +62,19 @@ contract TicketCredential {
         _;
     }
 
-    // Pass in the address of the already-deployed EventRegistry contract
-    constructor(address eventRegistryAddress) {
+    // Updated constructor (added CredentialRegistry)
+    constructor(address eventRegistryAddress, address credentialRegistryAddress) {
         eventRegistry = EventRegistry(eventRegistryAddress);
+        credentialRegistry = CredentialRegistry(credentialRegistryAddress);
     }
 
     // ISSUE a ticket to a buyer
-    // credentialHash = keccak256 hash of the full ticket JSON stored on IPFS
     function issueTicket(
         uint256 eventId,
         address buyer,
         bytes32 credentialHash
     ) external returns (uint256) {
-        // Check event exists and has tickets left by calling EventRegistry
+
         EventRegistry.Event memory evt = eventRegistry.getEvent(eventId);
         require(evt.organizer == msg.sender, "Only organizer can issue tickets");
 
@@ -90,10 +94,8 @@ contract TicketCredential {
             exists: true
         });
 
-        // Track which tickets this buyer owns
         holderTickets[buyer].push(newTicketId);
 
-        // Tell EventRegistry a ticket was sold
         eventRegistry.recordTicketSale(eventId);
 
         emit TicketIssued(newTicketId, eventId, buyer, credentialHash);
@@ -102,36 +104,40 @@ contract TicketCredential {
     }
 
     // TRANSFER a ticket to a new holder
-    // Old credential is revoked, new one issued to new holder
     function transferTicket(
         uint256 ticketId,
         address newHolder,
-        bytes32 newCredentialHash  // new hash because holder DID changed
+        bytes32 newCredentialHash
     ) external onlyHolder(ticketId) onlyValid(ticketId) {
+
         require(newHolder != address(0), "Invalid address");
         require(newHolder != msg.sender, "Cannot transfer to yourself");
 
         address oldHolder = credentials[ticketId].holder;
 
-        // Update the credential
+        // Revoke old credential in registry (draft feature)
+        credentialRegistry.revokeCredential(credentials[ticketId].credentialHash);
+
         credentials[ticketId].holder = newHolder;
         credentials[ticketId].credentialHash = newCredentialHash;
         credentials[ticketId].status = TicketStatus.Transferred;
 
-        // Track ticket under new holder
         holderTickets[newHolder].push(ticketId);
 
         emit TicketTransferred(ticketId, oldHolder, newHolder, newCredentialHash);
 
-        // Re-validate so it can still be used at the gate
         credentials[ticketId].status = TicketStatus.Valid;
     }
 
     // REVOKE a ticket (organizer fraud prevention)
     function revokeTicket(uint256 ticketId, uint256 eventId) external {
         require(credentials[ticketId].exists, "Ticket does not exist");
+
         EventRegistry.Event memory evt = eventRegistry.getEvent(eventId);
         require(evt.organizer == msg.sender, "Only organizer can revoke");
+
+        // Also mark credential as revoked in registry
+        credentialRegistry.revokeCredential(credentials[ticketId].credentialHash);
 
         address holder = credentials[ticketId].holder;
         credentials[ticketId].status = TicketStatus.Revoked;
@@ -139,12 +145,10 @@ contract TicketCredential {
         emit TicketRevoked(ticketId, holder);
     }
 
-    // READ all ticket IDs owned by a wallet
     function getHolderTickets(address holder) external view returns (uint256[] memory) {
         return holderTickets[holder];
     }
 
-    // READ a single credential
     function getCredential(uint256 ticketId) external view returns (Credential memory) {
         require(credentials[ticketId].exists, "Ticket does not exist");
         return credentials[ticketId];
