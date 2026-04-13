@@ -7,6 +7,7 @@ describe("Event Ticketing System", () => {
 
     // These will hold our deployed contract instances
     let eventRegistry;
+    let credentialRegistry;
     let ticketCredential;
     let gateVerifier;
 
@@ -19,8 +20,17 @@ describe("Event Ticketing System", () => {
     let ethers;
 
     // A fake IPFS hash representing ticket data stored off-chain
+    // Base hash used in early ticket tests
     const fakeCredentialHash = keccak256(
         toUtf8Bytes("seat:A14,venue:Chase Center,date:2026-05-01")
+    );
+    // Fresh hashes for gate-verifier tickets so revocation of earlier hashes
+    // (e.g., during transfer tests) doesn't trip the revocation check.
+    const gateCredentialHash1 = keccak256(
+        toUtf8Bytes("gate-ticket-1:unique")
+    );
+    const gateCredentialHash2 = keccak256(
+        toUtf8Bytes("gate-ticket-2:unique")
     );
 
     const fakeEventDate = Math.floor(Date.now() / 1000) + 86400; // tomorrow
@@ -37,18 +47,25 @@ describe("Event Ticketing System", () => {
         eventRegistry = await EventRegistry.connect(organizer).deploy();
         await eventRegistry.waitForDeployment();
 
-        // Deploy TicketCredential, passing EventRegistry's address
+        // Deploy CredentialRegistry (revocation list)
+        const CredentialRegistry = await ethers.getContractFactory("CredentialRegistry");
+        credentialRegistry = await CredentialRegistry.connect(organizer).deploy();
+        await credentialRegistry.waitForDeployment();
+
+        // Deploy TicketCredential, passing EventRegistry + CredentialRegistry addresses
         const TicketCredential = await ethers.getContractFactory("TicketCredential");
         ticketCredential = await TicketCredential.connect(organizer).deploy(
-            await eventRegistry.getAddress()
+            await eventRegistry.getAddress(),
+            await credentialRegistry.getAddress()
         );
         await ticketCredential.waitForDeployment();
 
-        // Deploy GateVerifier, passing both addresses
+        // Deploy GateVerifier, passing all three addresses
         const GateVerifier = await ethers.getContractFactory("GateVerifier");
         gateVerifier = await GateVerifier.connect(organizer).deploy(
             await eventRegistry.getAddress(),
-            await ticketCredential.getAddress()
+            await ticketCredential.getAddress(),
+            await credentialRegistry.getAddress()
         );
         await gateVerifier.waitForDeployment();
     });
@@ -160,7 +177,7 @@ describe("Event Ticketing System", () => {
             const tx = await ticketCredential.connect(organizer).issueTicket(
                 0,
                 buyer.address,
-                fakeCredentialHash
+                gateCredentialHash1
             );
             await tx.wait();
         });
@@ -169,7 +186,7 @@ describe("Event Ticketing System", () => {
             const tx = await gateVerifier.connect(organizer).verifyTicket(
                 1,  // ticketId (second ticket issued)
                 0,  // eventId
-                fakeCredentialHash
+                gateCredentialHash1
             );
             await tx.wait();
 
@@ -181,7 +198,7 @@ describe("Event Ticketing System", () => {
             const tx = await gateVerifier.connect(organizer).verifyTicket(
                 1,
                 0,
-                fakeCredentialHash
+                gateCredentialHash1
             );
             await tx.wait();
 
@@ -198,7 +215,7 @@ describe("Event Ticketing System", () => {
             const issueTx = await ticketCredential.connect(organizer).issueTicket(
                 0,
                 buyer.address,
-                fakeCredentialHash
+                gateCredentialHash2
             );
             await issueTx.wait();
 
